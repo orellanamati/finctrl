@@ -471,13 +471,20 @@ function renderBanks(){
 
 function renderBudget(){
   const mk=mkey(S.yr,S.mo);const g=document.getElementById('bgrid');g.innerHTML='';
+  // Derive budgetTracked from actual expenses to avoid drift
+  const derived={};
+  expenses.forEach(e=>{
+    if(e.bk){derived[mk+'-'+e.bk]=(derived[mk+'-'+e.bk]||0)+e.amount;}
+  });
   BCATS.forEach(bc=>{
-    const spent=S.budgetTracked[mk+'-'+bc.key]||0;const pct=Math.min(100,(spent/bc.budget)*100);
+    // Use derived if we have expenses, fall back to stored tracker for manual-only entries
+    const spent=derived[mk+'-'+bc.key]!==undefined?derived[mk+'-'+bc.key]:(S.budgetTracked[mk+'-'+bc.key]||0);
+    const pct=Math.min(100,(spent/bc.budget)*100);
     const over=spent>bc.budget,warn=!over&&pct>75;
     const col=over?'var(--danger)':warn?'var(--warn)':'var(--accent2)';
     const d=document.createElement('div');d.className='bc'+(over?' over':warn?' warn':'');
     d.innerHTML=`<div class="bclbl">${bc.label}</div><div class="bcrow"><div class="bcspent" style="color:${col}">${fmt(spent)}</div><div class="bcbgt">/${fmt(bc.budget)}</div></div><div class="bcbar"><div class="bcbar-fill ${over?'c-ov':warn?'c-wn':'c-ok'}" style="width:${pct}%"></div></div>`;
-    d.addEventListener('click',()=>openBudgetModal(bc,mk));
+    d.addEventListener('click',()=>openBudgetModal(bc,mk,spent));
     g.appendChild(d);
   });
 }
@@ -509,8 +516,12 @@ function renderTimeline(){
 }
 
 // ── MODALS ───────────────────────────────────────────────────
-function openBudgetModal(bc,mk){
-  const spent=S.budgetTracked[mk+'-'+bc.key]||0;const rest=bc.budget-spent;
+function openBudgetModal(bc,mk,spent){
+  if(spent===undefined){
+    const derived={};expenses.forEach(e=>{if(e.bk)derived[mk+'-'+e.bk]=(derived[mk+'-'+e.bk]||0)+e.amount;});
+    spent=derived[mk+'-'+bc.key]!==undefined?derived[mk+'-'+bc.key]:(S.budgetTracked[mk+'-'+bc.key]||0);
+  }
+  const rest=bc.budget-spent;
   document.getElementById('mb-title').textContent=bc.label;
   document.getElementById('mb-total').textContent=fmt(spent);
   document.getElementById('mb-total').style.color=spent>bc.budget?'var(--danger)':'var(--accent2)';
@@ -754,12 +765,17 @@ document.getElementById('btn-add-budget').addEventListener('click',async()=>{
   const bk=document.getElementById('m-bcat').value;
   const amount=parseInputAmt(document.getElementById('m-bamount'));
   if(!amount){showToast('Ingresa un monto válido');return;}
-  const mk=mkey(S.yr,S.mo);const key=mk+'-'+bk;
-  S.budgetTracked[key]=(S.budgetTracked[key]||0)+amount;
-  await saveState();renderBudget();
+  const mk=mkey(S.yr,S.mo);
+  const bc=BCATS.find(b=>b.key===bk);
+  const date=new Date().toISOString().split('T')[0];
+  // Save as expense so it shows in modal detail
+  const catMap={'super':'supermercado','bencina':'bencina','entrenador':'deporte','natacion':'deporte','perros':'otro','suscripc':'suscripcion','hogar':'hogar','salud':'salud','internet':'otro','cuidadora':'otro','arriendo':'otro','gc':'otro','servicios':'otro'};
+  const cat=catMap[bk]||'otro';
+  await fbAdd({desc:bc?.label||bk, amount, cat, bk, date});
   document.getElementById('m-bamount').value='';
-  const bc=BCATS.find(b=>b.key===bk);const spent=S.budgetTracked[key];const rest=(bc?.budget||0)-spent;
-  await addLog({type:'budget',desc:`${bc?.label||bk}`,amount,bk,mk});
+  const key=mk+'-'+bk;
+  const spent=S.budgetTracked[key]||0;
+  const rest=(bc?.budget||0)-spent;
   botMsg(`Actualicé **${bc?.label||bk}**: +${fmt(amount)}\nTotal: ${fmt(spent)} · ${rest>=0?`Te quedan **${fmt(rest)}**`:`⚠️ Superado por **${fmt(-rest)}**`}`);
   showToast('Presupuesto actualizado ✓');
 });
