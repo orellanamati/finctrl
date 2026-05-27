@@ -399,9 +399,9 @@ async function fbAdd(data){
   setSyncDot('saving');
   try{
     const mk=mkey(S.yr,S.mo);
-    const ref=await addDoc(expCol(mk),{...data,ts:Date.now()});
-    if(data.bk){const key=mk+'-'+data.bk;S.budgetTracked[key]=(S.budgetTracked[key]||0)+data.amount;await saveState();}else setSyncDot('ok');
-    await addLog({type:'extra',desc:data.desc,amount:data.amount,cat:data.cat,bk:data.bk||null,mk,docId:ref.id});
+    await addDoc(expCol(mk),{...data,ts:Date.now()});
+    await addLog({type:data.bk?'budget':'extra',desc:data.desc,amount:data.amount,cat:data.cat,bk:data.bk||null,mk});
+    setSyncDot('ok');
   }catch(e){setSyncDot('err');console.error(e);}
 }
 
@@ -411,8 +411,8 @@ async function fbDel(id){
     const mk=mkey(S.yr,S.mo);
     const exp=expenses.find(e=>e.id===id);
     await deleteDoc(doc(db,'mati','months',mk,id));
-    if(exp&&exp.bk){const key=mk+'-'+exp.bk;S.budgetTracked[key]=Math.max(0,(S.budgetTracked[key]||0)-exp.amount);await saveState();}else setSyncDot('ok');
     if(exp) await addLog({type:'deleted',desc:exp.desc,amount:exp.amount,cat:exp.cat,mk});
+    setSyncDot('ok');
   }catch(e){setSyncDot('err');console.error(e);}
 }
 
@@ -422,9 +422,6 @@ async function fbEdit(id,newData){
     const mk=mkey(S.yr,S.mo);
     const old=expenses.find(e=>e.id===id);
     await updateDoc(doc(db,'mati','months',mk,id),{...newData,editedAt:Date.now()});
-    // fix budget tracker
-    if(old&&old.bk){const key=mk+'-'+old.bk;S.budgetTracked[key]=Math.max(0,(S.budgetTracked[key]||0)-old.amount);}
-    if(newData.bk){const key=mk+'-'+newData.bk;S.budgetTracked[key]=(S.budgetTracked[key]||0)+newData.amount;}
     await saveState();
     await addLog({type:'edited',desc:newData.desc,amount:newData.amount,cat:newData.cat,mk,prev:old?.amount});
   }catch(e){setSyncDot('err');console.error(e);}
@@ -471,20 +468,16 @@ function renderBanks(){
 
 function renderBudget(){
   const mk=mkey(S.yr,S.mo);const g=document.getElementById('bgrid');g.innerHTML='';
-  // Derive budgetTracked from actual expenses to avoid drift
-  const derived={};
-  expenses.forEach(e=>{
-    if(e.bk){derived[mk+'-'+e.bk]=(derived[mk+'-'+e.bk]||0)+e.amount;}
-  });
+  // Always derive from expenses — never trust budgetTracked
+  const spent={};
+  expenses.forEach(e=>{if(e.bk) spent[e.bk]=(spent[e.bk]||0)+e.amount;});
   BCATS.forEach(bc=>{
-    // Use derived if we have expenses, fall back to stored tracker for manual-only entries
-    const spent=derived[mk+'-'+bc.key]!==undefined?derived[mk+'-'+bc.key]:(S.budgetTracked[mk+'-'+bc.key]||0);
-    const pct=Math.min(100,(spent/bc.budget)*100);
-    const over=spent>bc.budget,warn=!over&&pct>75;
+    const s=spent[bc.key]||0;const pct=Math.min(100,(s/bc.budget)*100);
+    const over=s>bc.budget,warn=!over&&pct>75;
     const col=over?'var(--danger)':warn?'var(--warn)':'var(--accent2)';
     const d=document.createElement('div');d.className='bc'+(over?' over':warn?' warn':'');
-    d.innerHTML=`<div class="bclbl">${bc.label}</div><div class="bcrow"><div class="bcspent" style="color:${col}">${fmt(spent)}</div><div class="bcbgt">/${fmt(bc.budget)}</div></div><div class="bcbar"><div class="bcbar-fill ${over?'c-ov':warn?'c-wn':'c-ok'}" style="width:${pct}%"></div></div>`;
-    d.addEventListener('click',()=>openBudgetModal(bc,mk,spent));
+    d.innerHTML=`<div class="bclbl">${bc.label}</div><div class="bcrow"><div class="bcspent" style="color:${col}">${fmt(s)}</div><div class="bcbgt">/${fmt(bc.budget)}</div></div><div class="bcbar"><div class="bcbar-fill ${over?'c-ov':warn?'c-wn':'c-ok'}" style="width:${pct}%"></div></div>`;
+    d.addEventListener('click',()=>openBudgetModal(bc,mk,s));
     g.appendChild(d);
   });
 }
@@ -765,19 +758,14 @@ document.getElementById('btn-add-budget').addEventListener('click',async()=>{
   const bk=document.getElementById('m-bcat').value;
   const amount=parseInputAmt(document.getElementById('m-bamount'));
   if(!amount){showToast('Ingresa un monto válido');return;}
-  const mk=mkey(S.yr,S.mo);
   const bc=BCATS.find(b=>b.key===bk);
   const date=new Date().toISOString().split('T')[0];
-  // Save as expense so it shows in modal detail
   const catMap={'super':'supermercado','bencina':'bencina','entrenador':'deporte','natacion':'deporte','perros':'otro','suscripc':'suscripcion','hogar':'hogar','salud':'salud','internet':'otro','cuidadora':'otro','arriendo':'otro','gc':'otro','servicios':'otro'};
   const cat=catMap[bk]||'otro';
   await fbAdd({desc:bc?.label||bk, amount, cat, bk, date});
   document.getElementById('m-bamount').value='';
-  const key=mk+'-'+bk;
-  const spent=S.budgetTracked[key]||0;
-  const rest=(bc?.budget||0)-spent;
-  botMsg(`Actualicé **${bc?.label||bk}**: +${fmt(amount)}\nTotal: ${fmt(spent)} · ${rest>=0?`Te quedan **${fmt(rest)}**`:`⚠️ Superado por **${fmt(-rest)}**`}`);
   showToast('Presupuesto actualizado ✓');
+  botMsg(`Registré **${fmt(amount)}** en ${bc?.label||bk} ✓\n\nAparece en el detalle de la tarjeta.`);
 });
 
 // Manual: debt
@@ -825,7 +813,10 @@ document.getElementById('m-date').value=new Date().toISOString().split('T')[0];
 
 (async()=>{
   try{
-    await loadState();render();subscribeExpenses();setSyncDot('ok');
+    await loadState();
+    // Clear stale budgetTracked — budget is now derived purely from expenses
+    if(Object.keys(S.budgetTracked).length>0){S.budgetTracked={};await saveState();}
+    render();subscribeExpenses();setSyncDot('ok');
     document.getElementById('loading').classList.add('hidden');
     setTimeout(()=>botMsg(`Hola Mati 👋 Conectado y sincronizado.\n\nCuéntame tus gastos o usa el panel de **Ingreso manual** para más control.\n\n• *"Almorcé $12.000"*\n• *"Comida de perros $10.000"*\n• *"Pagué $2.9M al Itaú"*\n• *"¿Cuánto debo?"*`),300);
   }catch(e){
