@@ -145,6 +145,11 @@ header{display:flex;align-items:center;justify-content:space-between;padding:1re
 /* TOAST */
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:8px 16px;font-size:12px;transition:transform .3s;z-index:999;pointer-events:none}
 #toast.show{transform:translateX(-50%) translateY(0)}
+/* MANUAL ENTRY TABS */
+.mtab{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--muted);font-family:var(--fm);font-size:11px;padding:6px 4px;cursor:pointer;transition:all .2s}
+.mtab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.mtab:hover:not(.active){border-color:var(--accent);color:var(--accent)}
+.flbl{font-size:10px;color:var(--muted);margin-bottom:4px}
 @media(max-width:750px){.app{grid-template-columns:1fr;height:auto}.right{height:65vh;border-left:none;border-top:1px solid var(--border)}.banks{grid-template-columns:1fr 1fr}}
 </style>
 </head>
@@ -207,6 +212,81 @@ header{display:flex;align-items:center;justify-content:space-between;padding:1re
         <div><div style="font-size:10px;color:var(--muted);margin-bottom:4px">Bice ($)</div><input id="i-bice" type="number" class="adj" placeholder="50000"></div>
       </div>
       <button class="adjbtn" id="btn-update-debts">Actualizar deudas</button>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem">
+      <div class="slabel">Ingreso manual</div>
+      <!-- MODE TABS -->
+      <div style="display:flex;gap:6px;margin-bottom:1rem">
+        <button class="mtab active" data-mode="extra" id="tab-extra">Gasto extra</button>
+        <button class="mtab" data-mode="budget" id="tab-budget">Presupuesto</button>
+        <button class="mtab" data-mode="debt" id="tab-debt">Abono deuda</button>
+      </div>
+      <!-- EXTRA EXPENSE -->
+      <div id="form-extra">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <div><div class="flbl">Descripción</div><input id="m-desc" class="adj" type="text" placeholder="Ej: Almuerzo La Picá"></div>
+          <div><div class="flbl">Monto ($)</div><input id="m-amount" class="adj" type="number" placeholder="12000"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <div><div class="flbl">Categoría</div>
+            <select id="m-cat" class="adj">
+              <option value="comida">🍽️ Comida</option>
+              <option value="supermercado">🛒 Supermercado</option>
+              <option value="bencina">⛽ Bencina</option>
+              <option value="carrete">🥂 Carrete</option>
+              <option value="salud">💊 Salud</option>
+              <option value="ropa">👕 Ropa</option>
+              <option value="viaje">✈️ Viaje</option>
+              <option value="hogar">🏠 Hogar</option>
+              <option value="deporte">🚴 Deporte</option>
+              <option value="regalo">🎁 Regalo</option>
+              <option value="suscripcion">📱 Suscripción</option>
+              <option value="otro">📌 Otro</option>
+            </select>
+          </div>
+          <div><div class="flbl">Fecha</div><input id="m-date" class="adj" type="date"></div>
+        </div>
+        <button class="adjbtn" id="btn-add-extra">+ Registrar gasto extra</button>
+      </div>
+      <!-- BUDGET UPDATE -->
+      <div id="form-budget" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <div><div class="flbl">Categoría</div>
+            <select id="m-bcat" class="adj">
+              <option value="arriendo">Arriendo</option>
+              <option value="gc">Gastos comunes</option>
+              <option value="servicios">Servicios</option>
+              <option value="super">Supermercado</option>
+              <option value="bencina">Combustible</option>
+              <option value="perros">Comida perros</option>
+              <option value="internet">Internet parcela</option>
+              <option value="cuidadora">Cuidadora mamá</option>
+              <option value="entrenador">Entrenador</option>
+              <option value="natacion">Natación</option>
+              <option value="suscripc">Suscripciones</option>
+            </select>
+          </div>
+          <div><div class="flbl">Monto ($)</div><input id="m-bamount" class="adj" type="number" placeholder="95000"></div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Suma este monto al total gastado en la categoría este mes.</div>
+        <button class="adjbtn" id="btn-add-budget">+ Actualizar presupuesto</button>
+      </div>
+      <!-- DEBT PAYMENT -->
+      <div id="form-debt" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <div><div class="flbl">Banco</div>
+            <select id="m-dbank" class="adj">
+              <option value="chile">Banco Chile</option>
+              <option value="itau">Banco Itaú</option>
+              <option value="bice">Banco Bice</option>
+            </select>
+          </div>
+          <div><div class="flbl">Monto abonado ($)</div><input id="m-damount" class="adj" type="number" placeholder="2900000"></div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Se restará del saldo actual del banco seleccionado.</div>
+        <button class="adjbtn" id="btn-add-debt">+ Registrar abono</button>
+      </div>
     </div>
 
     <div>
@@ -702,6 +782,76 @@ document.getElementById('btn-mb-close').addEventListener('click', ()=>document.g
 document.getElementById('btn-mh-close').addEventListener('click', ()=>document.getElementById('modal-history').classList.add('hidden'));
 document.getElementById('modal-budget').addEventListener('click', e=>{ if(e.target===document.getElementById('modal-budget')) document.getElementById('modal-budget').classList.add('hidden'); });
 document.getElementById('modal-history').addEventListener('click', e=>{ if(e.target===document.getElementById('modal-history')) document.getElementById('modal-history').classList.add('hidden'); });
+
+// ── MANUAL ENTRY ─────────────────────────────────────────────
+// Set today's date as default
+document.getElementById('m-date').value = new Date().toISOString().split('T')[0];
+
+// Tab switching
+document.querySelectorAll('.mtab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    const mode = tab.dataset.mode;
+    document.getElementById('form-extra').style.display  = mode==='extra'  ? '' : 'none';
+    document.getElementById('form-budget').style.display = mode==='budget' ? '' : 'none';
+    document.getElementById('form-debt').style.display   = mode==='debt'   ? '' : 'none';
+  });
+});
+
+// Add extra expense manually
+document.getElementById('btn-add-extra').addEventListener('click', async () => {
+  const desc   = document.getElementById('m-desc').value.trim();
+  const amount = parseFloat(document.getElementById('m-amount').value);
+  const cat    = document.getElementById('m-cat').value;
+  const date   = document.getElementById('m-date').value || new Date().toISOString().split('T')[0];
+  if (!desc || isNaN(amount) || amount <= 0) { showToast('Completa descripción y monto'); return; }
+  const bk = detectBK(desc + ' ' + cat);
+  await fbAdd({desc, amount, cat, bk, date});
+  document.getElementById('m-desc').value = '';
+  document.getElementById('m-amount').value = '';
+  botMsg(`Registré manualmente **${fmt(amount)}** en ${CATS[cat]?.label||cat} ✓`);
+  showToast('Gasto registrado ✓');
+});
+
+// Update budget category manually
+document.getElementById('btn-add-budget').addEventListener('click', async () => {
+  const bk     = document.getElementById('m-bcat').value;
+  const amount = parseFloat(document.getElementById('m-bamount').value);
+  if (isNaN(amount) || amount <= 0) { showToast('Ingresa un monto válido'); return; }
+  const mk  = mkey(S.yr, S.mo);
+  const key = mk+'-'+bk;
+  S.budgetTracked[key] = (S.budgetTracked[key]||0) + amount;
+  await saveState();
+  renderBudget();
+  document.getElementById('m-bamount').value = '';
+  const bc = BCATS.find(b=>b.key===bk);
+  const spent = S.budgetTracked[key];
+  const rest  = (bc?.budget||0) - spent;
+  botMsg(`Actualicé **${bc?.label||bk}**: +${fmt(amount)}\nTotal gastado: ${fmt(spent)} · ${rest>=0?`Te quedan **${fmt(rest)}**`:`⚠️ Superado por **${fmt(-rest)}**`}`);
+  showToast('Presupuesto actualizado ✓');
+});
+
+// Register debt payment manually
+document.getElementById('btn-add-debt').addEventListener('click', async () => {
+  const bank   = document.getElementById('m-dbank').value;
+  const amount = parseFloat(document.getElementById('m-damount').value);
+  if (isNaN(amount) || amount <= 0) { showToast('Ingresa un monto válido'); return; }
+  const prev = S.debts[bank]||0;
+  S.debts[bank] = Math.max(0, prev - amount);
+  await saveState();
+  render();
+  document.getElementById('m-damount').value = '';
+  const bl = BANKS.find(b=>b.key===bank)?.label||bank;
+  const liquidado = S.debts[bank]===0;
+  botMsg(`Abono a ${bl}: **${fmt(amount)}** ✓\n${fmt(prev)} → **${liquidado?'✓ Liquidado 🎉':fmt(S.debts[bank])}**\nDeuda total: **${fmt(totalDebt())}**`);
+  showToast('Abono registrado ✓');
+});
+
+function showToast(msg) {
+  const t=document.getElementById('toast'); t.textContent=msg;
+  t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200);
+}
 
 // ── INIT ─────────────────────────────────────────────────────
 (async()=>{
