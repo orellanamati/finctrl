@@ -519,6 +519,7 @@ function openBudgetModal(bc, mk) {
   document.getElementById('modal-budget').classList.remove('hidden');
 }
 function closeBudgetModal() { document.getElementById('modal-budget').classList.add('hidden'); }
+window.closeBudgetModal = closeBudgetModal;
 
 async function openHistory() {
   document.getElementById('modal-history').classList.remove('hidden');
@@ -566,6 +567,8 @@ async function openHistory() {
   if (!hasAny) body.innerHTML = '<div class="empty">Sin gastos registrados en meses anteriores</div>';
 }
 function closeHistory() { document.getElementById('modal-history').classList.add('hidden'); }
+window.closeHistory = closeHistory;
+window.openHistory = openHistory;
 
 function renderExpenses() {
   const total = expenses.reduce((s,e) => s+e.amount, 0);
