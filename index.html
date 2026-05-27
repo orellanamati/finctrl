@@ -651,13 +651,146 @@ function renderExpenses(){
 
 function renderTimeline(){
   const tl=document.getElementById('tl');tl.innerHTML='';
-  PLAN.forEach((it,i)=>{
-    const tot=(it.sChile||0)+(it.sItau||0)+(it.sBice||0);const done=tot===0;const isLast=i===PLAN.length-1;
-    const [yr,mo]=it.mk.split('-').map(Number);const m=mo-1;
-    const dc=done?{c:'#7cffb2',bg:'rgba(124,255,178,.2)'}:tot<1000000?{c:'#ffb84f',bg:'rgba(255,184,79,.15)'}:{c:'#4f7fff',bg:'rgba(79,127,255,.15)'};
-    const detail=done?'':[it.sChile>0?`Chile: ${fmt(it.sChile)}`:'',it.sItau>0?`Itaú: ${fmt(it.sItau)}`:'',it.sBice>0?`Bice: ${fmt(it.sBice)}`:''].filter(Boolean).join(' · ');
+  const ahorro=S.income-S.egresos;
+  const vicenteJunio=5500000;
+
+  // Build detailed plan from current debts
+  const planData=[
+    {
+      mk:'2026-06',
+      label:'Junio 2026',
+      color:'#4f7fff',
+      ingresos:[
+        {label:'Sueldo',amt:S.income},
+        {label:'Pago Vicente',amt:vicenteJunio},
+      ],
+      egresos_recurrentes: S.egresos,
+      gastos_extra:[
+        {label:'Iquique (auto+hotel+bencina)',amt:250000},
+        {label:'Estufa mamá',amt:150000},
+        {label:'Impresora 3D',amt:500000},
+      ],
+      pagos_deuda:[
+        {banco:'Banco Bice',amt:S.debts.bice,saldo_prev:S.debts.bice,saldo_post:0},
+        {banco:'Banco Itaú',amt:S.debts.itau,saldo_prev:S.debts.itau,saldo_post:0},
+        {banco:'Banco Chile',amt:null,saldo_prev:S.debts.chile,saldo_post:2311106,note:'pago parcial'},
+      ],
+      colchon:2000000,
+    },
+    {
+      mk:'2026-07',
+      label:'Julio 2026',
+      color:'#ffb84f',
+      ingresos:[{label:'Sueldo',amt:S.income}],
+      egresos_recurrentes: S.egresos,
+      gastos_extra:[
+        {label:'Bicicleta nueva',amt:1500000},
+      ],
+      pagos_deuda:[
+        {banco:'Banco Chile',amt:null,saldo_prev:2311106,saldo_post:482212,note:'pago con ahorro restante'},
+      ],
+      colchon:2000000,
+    },
+    {
+      mk:'2026-08',
+      label:'Agosto 2026',
+      color:'#7cffb2',
+      ingresos:[{label:'Sueldo',amt:S.income}],
+      egresos_recurrentes: S.egresos,
+      gastos_extra:[
+        {label:'Adelantar vuelos Buenos Aires',amt:300000},
+      ],
+      pagos_deuda:[
+        {banco:'Banco Chile',amt:482212,saldo_prev:482212,saldo_post:0,note:'liquidación final'},
+      ],
+      colchon:2000000,
+      libre:true,
+    },
+  ];
+
+  planData.forEach((mes,i)=>{
+    const isLast=i===planData.length-1;
+    const totalIngresos=mes.ingresos.reduce((s,x)=>s+x.amt,0);
+    const totalExtras=mes.gastos_extra.reduce((s,x)=>s+x.amt,0);
+    const totalPagos=mes.pagos_deuda.reduce((s,x)=>s+(x.amt||0),0);
+    const disponible=totalIngresos-mes.egresos_recurrentes-totalExtras-totalPagos;
+    const colchonDelta=disponible-mes.colchon;
+    const dc=mes.libre?{c:'#7cffb2',bg:'rgba(124,255,178,.2)'}:i===1?{c:'#ffb84f',bg:'rgba(255,184,79,.15)'}:{c:'#4f7fff',bg:'rgba(79,127,255,.15)'};
+
     const row=document.createElement('div');row.className='tlrow';
-    row.innerHTML=`<div class="tlleft"><div class="tldot" style="border-color:${dc.c};background:${dc.bg}"></div>${!isLast?'<div class="tlline"></div>':''}</div><div class="tlbody"><div class="tlmo">${MONTHS[m]} ${yr}${done?' ✓':''}</div><div class="tldet">${it.note}</div>${detail?`<div class="tldet" style="color:var(--warn);margin-top:2px">${detail}</div>`:''}${done?`<div class="tldet" style="color:var(--accent2)">🎉 Ahorro libre: ~${fmt(3346682)}/mes</div>`:''}</div>`;
+
+    const bodyId=`tl-body-${i}`;
+    row.innerHTML=`
+      <div class="tlleft">
+        <div class="tldot" style="border-color:${dc.c};background:${dc.bg}"></div>
+        ${!isLast?'<div class="tlline"></div>':''}
+      </div>
+      <div class="tlbody" style="padding-bottom:${isLast?'0':'.9rem'}">
+        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" id="tl-hdr-${i}">
+          <div>
+            <div class="tlmo">${mes.label}${mes.libre?' ✓':''}</div>
+            <div class="tldet" style="margin-top:2px">
+              ${mes.pagos_deuda.map(p=>p.saldo_post===0?`<span style="color:var(--accent2)">✓ ${p.banco} liquidado</span>`:`${p.banco}: ${fmt(p.saldo_post)} restante`).join(' · ')}
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);flex-shrink:0;margin-left:8px">ver ▾</div>
+        </div>
+        <div id="${bodyId}" style="display:none;margin-top:.75rem;background:var(--surface2);border-radius:10px;padding:.75rem;font-size:12px">
+
+          <div style="margin-bottom:.6rem;padding-bottom:.6rem;border-bottom:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.08em">Ingresos</div>
+            ${mes.ingresos.map(x=>`<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--text)">${x.label}</span><span style="color:var(--accent2);font-weight:600">${fmt(x.amt)}</span></div>`).join('')}
+            <div style="display:flex;justify-content:space-between;padding:3px 0;margin-top:2px;font-weight:600"><span>Total ingresos</span><span style="color:var(--accent2)">${fmt(totalIngresos)}</span></div>
+          </div>
+
+          <div style="margin-bottom:.6rem;padding-bottom:.6rem;border-bottom:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.08em">Egresos fijos</div>
+            <div style="display:flex;justify-content:space-between;padding:2px 0"><span>Gastos recurrentes</span><span style="color:var(--danger)">${fmt(mes.egresos_recurrentes)}</span></div>
+          </div>
+
+          ${mes.gastos_extra.length?`
+          <div style="margin-bottom:.6rem;padding-bottom:.6rem;border-bottom:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.08em">Gastos planificados</div>
+            ${mes.gastos_extra.map(x=>`<div style="display:flex;justify-content:space-between;padding:2px 0"><span>${x.label}</span><span style="color:var(--warn)">${fmt(x.amt)}</span></div>`).join('')}
+            <div style="display:flex;justify-content:space-between;padding:3px 0;margin-top:2px;font-weight:600"><span>Subtotal extras</span><span style="color:var(--warn)">${fmt(totalExtras)}</span></div>
+          </div>`:''}
+
+          <div style="margin-bottom:.6rem;padding-bottom:.6rem;border-bottom:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.08em">Pagos a deuda</div>
+            ${mes.pagos_deuda.map(p=>`
+              <div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+                <div style="display:flex;justify-content:space-between">
+                  <span style="font-weight:600">${p.banco}</span>
+                  <span style="color:var(--danger)">${p.amt?fmt(p.amt):'—'}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-top:2px;font-size:11px;color:var(--muted)">
+                  <span>${fmt(p.saldo_prev)} → <span style="color:${p.saldo_post===0?'var(--accent2)':'var(--warn)'}">${p.saldo_post===0?'$0 ✓':fmt(p.saldo_post)}</span></span>
+                  ${p.note?`<span style="font-style:italic">${p.note}</span>`:''}
+                </div>
+              </div>`).join('')}
+          </div>
+
+          <div style="background:var(--surface);border-radius:8px;padding:.6rem;margin-top:.25rem">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em">Resumen del mes</div>
+            <div style="display:flex;justify-content:space-between;padding:2px 0"><span>Colchón de seguridad</span><span style="color:var(--accent)">${fmt(mes.colchon)}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:2px 0;font-weight:700;margin-top:4px;font-size:13px">
+              <span>Delta disponible</span>
+              <span style="color:${colchonDelta>=0?'var(--accent2)':'var(--danger)'}">${colchonDelta>=0?'+':''}${fmt(colchonDelta)}</span>
+            </div>
+            ${mes.libre?`<div style="color:var(--accent2);margin-top:6px;font-weight:600">🎉 Desde aquí: ~${fmt(ahorro)}/mes libre de deuda</div>`:''}
+          </div>
+        </div>
+      </div>`;
+
+    // Toggle expand
+    row.querySelector(`#tl-hdr-${i}`).addEventListener('click',()=>{
+      const body=document.getElementById(bodyId);
+      const arrow=row.querySelector(`#tl-hdr-${i} div:last-child`);
+      const open=body.style.display==='none';
+      body.style.display=open?'block':'none';
+      arrow.textContent=open?'ver ▴':'ver ▾';
+    });
+
     tl.appendChild(row);
   });
 }
