@@ -183,7 +183,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:1re
     <div>
       <div class="slabel">Deuda por banco</div>
       <div class="banks" id="banks"></div>
-      <div class="dhero">
+      <div class="dhero" id="dhero" style="cursor:pointer" title="Click para ver resumen de abonos">
         <div class="dtotal" id="dtotal">$0</div>
         <div class="dsub">deuda total en tarjetas de crédito</div>
         <div class="dprog"><div class="dprog-fill" id="dprog" style="width:0%"></div></div>
@@ -465,32 +465,88 @@ function parseInputAmt(el){return parseInt(el.value.replace(/\./g,'').replace(/[
 
 // ── MODALS ───────────────────────────────────────────────────
 async function openDebtModal(bank){
-  document.getElementById('md-title').textContent=bank.label;
-  const amt=S.debts[bank.key]||0;
-  const paid=bank.orig-amt;
-  document.getElementById('md-total').textContent=fmt(amt);
-  document.getElementById('md-total').style.color=amt===0?'var(--accent2)':'var(--danger)';
-  document.getElementById('md-sub').textContent=`Pagado: ${fmt(paid)} de ${fmt(bank.orig)} · ${((paid/bank.orig)*100).toFixed(1)}%`;
+  const isSummary = !bank; // null = summary view
+  document.getElementById('md-title').textContent = isSummary ? 'Resumen de abonos' : bank.label;
   const items=document.getElementById('md-items');
-  items.innerHTML='<div class="empty">Cargando abonos...</div>';
+  items.innerHTML='<div class="empty">Cargando...</div>';
   document.getElementById('modal-debt').classList.remove('hidden');
+
+  if(!isSummary){
+    const amt=S.debts[bank.key]||0;
+    const paid=bank.orig-amt;
+    document.getElementById('md-total').textContent=fmt(amt);
+    document.getElementById('md-total').style.color=amt===0?'var(--accent2)':'var(--danger)';
+    document.getElementById('md-sub').textContent=`Abonado: ${fmt(paid)} de ${fmt(bank.orig)} · ${((paid/bank.orig)*100).toFixed(1)}% pagado`;
+  } else {
+    document.getElementById('md-total').textContent=fmt(totalDebt());
+    document.getElementById('md-total').style.color='var(--danger)';
+    document.getElementById('md-sub').textContent=`Deuda original: ${fmt(ORIG)} · ${(((ORIG-totalDebt())/ORIG)*100).toFixed(1)}% pagado`;
+  }
+
+  items.innerHTML='';
+
+  // Inline add form (only for specific bank, not summary)
+  if(!isSummary){
+    const addRow=document.createElement('div');
+    addRow.style.cssText='display:flex;gap:8px;margin-bottom:1rem;padding-bottom:1rem;border-bottom:1px solid var(--border)';
+    addRow.innerHTML=`
+      <input id="md-add-amt" class="adj fmtnum" type="text" inputmode="numeric" placeholder="Monto abono" style="flex:1">
+      <button id="md-add-btn" style="background:var(--accent2);border:none;border-radius:7px;color:#111;font-family:var(--fd);font-weight:700;font-size:12px;padding:6px 14px;cursor:pointer;white-space:nowrap">+ Abonar</button>`;
+    items.appendChild(addRow);
+    fmtInput(document.getElementById('md-add-amt'));
+    document.getElementById('md-add-btn').addEventListener('click', async()=>{
+      const amount=parseInputAmt(document.getElementById('md-add-amt'));
+      if(!amount){showToast('Ingresa un monto válido');return;}
+      const prev=S.debts[bank.key]||0;
+      S.debts[bank.key]=Math.max(0,prev-amount);
+      await saveState();
+      render();
+      await addLog({type:'debt',desc:`Abono ${bank.label}`,bank:bank.key,amount,mk:mkey(S.yr,S.mo)});
+      document.getElementById('md-add-amt').value='';
+      showToast(`Abono de ${fmt(amount)} registrado ✓`);
+      botMsg(`Abono a ${bank.label}: **${fmt(amount)}** ✓\n${fmt(prev)} → **${S.debts[bank.key]===0?'✓ Liquidado 🎉':fmt(S.debts[bank.key])}**`);
+      openDebtModal(bank); // refresh
+    });
+  }
+
+  // Load abonos from log
   try{
     const q=query(logRef,orderBy('ts','desc'));
     const snap=await getDocs(q);
-    const abonos=snap.docs.map(d=>({id:d.id,...d.data()})).filter(e=>e.type==='debt'&&e.bank===bank.key);
-    items.innerHTML='';
-    if(!abonos.length){items.innerHTML='<div class="empty">Sin abonos registrados aún</div>';return;}
+    const all=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const abonos=isSummary
+      ? all.filter(e=>e.type==='debt')
+      : all.filter(e=>e.type==='debt' && e.bank===bank.key);
+
+    if(!abonos.length){
+      const empty=document.createElement('div');
+      empty.className='empty';empty.style.marginTop='1rem';
+      empty.textContent='Sin abonos registrados aún';
+      items.appendChild(empty);
+      return;
+    }
+
     const total=abonos.reduce((s,e)=>s+e.amount,0);
     const sumDiv=document.createElement('div');
-    sumDiv.style.cssText='display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:.5rem 0 1rem;border-bottom:1px solid var(--border);margin-bottom:.5rem';
-    sumDiv.innerHTML=`<span>${abonos.length} abono${abonos.length>1?'s':''}</span><span style="color:var(--accent2);font-weight:700">Total abonado: ${fmt(total)}</span>`;
+    sumDiv.style.cssText='display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:.5rem 0 .75rem;border-bottom:1px solid var(--border);margin-bottom:.5rem';
+    sumDiv.innerHTML=`<span>${abonos.length} abono${abonos.length>1?'s':''}</span><span style="color:var(--accent2);font-weight:700">Total: ${fmt(total)}</span>`;
     items.appendChild(sumDiv);
+
     abonos.forEach(e=>{
+      const bankInfo=BANKS.find(b=>b.key===e.bank);
       const d=document.createElement('div');d.className='mitem';
-      d.innerHTML=`<div class="miicon" style="background:#1a2228">🏦</div><div class="miinfo"><div class="midesc">${fmt(e.amount)}</div><div class="midate">${e.date||''}</div></div><div class="miamt" style="color:var(--accent2)">abono</div>`;
+      d.innerHTML=`<div class="miicon" style="background:#1a2228">🏦</div>
+        <div class="miinfo">
+          <div class="midesc">${isSummary?(bankInfo?.label||e.bank||'—'):fmt(e.amount)}</div>
+          <div class="midate">${e.date||''}</div>
+        </div>
+        <div class="miamt" style="color:var(--accent2)">${isSummary?fmt(e.amount):'abono'}</div>`;
       items.appendChild(d);
     });
-  }catch(err){items.innerHTML='<div class="empty">Error cargando historial</div>';console.error(err);}
+  }catch(err){
+    items.innerHTML='<div class="empty">Error cargando historial</div>';
+    console.error(err);
+  }
 }
 
 // ── RENDER ───────────────────────────────────────────────────
@@ -794,6 +850,7 @@ document.getElementById('btn-prev').addEventListener('click',()=>{S.mo--;if(S.mo
 document.getElementById('btn-next').addEventListener('click',()=>{S.mo++;if(S.mo>11){S.mo=0;S.yr++;}subscribeExpenses();render();});
 
 // Close modals
+document.getElementById('dhero').addEventListener('click',()=>openDebtModal(null));
 document.getElementById('btn-md-close').addEventListener('click',()=>document.getElementById('modal-debt').classList.add('hidden'));
 document.getElementById('btn-mb-close').addEventListener('click',()=>document.getElementById('modal-budget').classList.add('hidden'));
 document.getElementById('btn-mh-close').addEventListener('click',()=>document.getElementById('modal-history').classList.add('hidden'));
@@ -864,9 +921,18 @@ document.getElementById('btn-add-debt').addEventListener('click',async()=>{
 
 // Adjust debts
 document.getElementById('btn-update-debts').addEventListener('click',async()=>{
-  const c=parseFloat(document.getElementById('i-chile').value);const it=parseFloat(document.getElementById('i-itau').value);const b=parseFloat(document.getElementById('i-bice').value);
-  if(!isNaN(c)&&c>=0)S.debts.chile=c;if(!isNaN(it)&&it>=0)S.debts.itau=it;if(!isNaN(b)&&b>=0)S.debts.bice=b;
+  const c=parseFloat(document.getElementById('i-chile').value);
+  const it=parseFloat(document.getElementById('i-itau').value);
+  const b=parseFloat(document.getElementById('i-bice').value);
+  const updates=[];
+  if(!isNaN(c)&&c>=0){const diff=S.debts.chile-c;if(diff>0)updates.push({bank:'chile',amount:diff});S.debts.chile=c;}
+  if(!isNaN(it)&&it>=0){const diff=S.debts.itau-it;if(diff>0)updates.push({bank:'itau',amount:diff});S.debts.itau=it;}
+  if(!isNaN(b)&&b>=0){const diff=S.debts.bice-b;if(diff>0)updates.push({bank:'bice',amount:diff});S.debts.bice=b;}
   await saveState();render();
+  for(const u of updates){
+    const bl=BANKS.find(x=>x.key===u.bank)?.label||u.bank;
+    await addLog({type:'debt',desc:`Abono ${bl}`,bank:u.bank,amount:u.amount,mk:mkey(S.yr,S.mo)});
+  }
   botMsg(`Deudas actualizadas:\n• Chile: **${fmt(S.debts.chile)}**\n• Itaú: **${fmt(S.debts.itau)}**\n• Bice: **${fmt(S.debts.bice)}**\n\nTotal: **${fmt(totalDebt())}**`);
 });
 
