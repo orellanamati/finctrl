@@ -21,6 +21,32 @@ header{display:flex;align-items:center;justify-content:space-between;padding:1re
 .app{display:grid;grid-template-columns:1fr 360px;flex:1;overflow:hidden;height:calc(100vh - 57px)}
 .panel-left{overflow-y:auto;padding:1.5rem;display:flex;flex-direction:column;gap:1.25rem}
 .panel-left::-webkit-scrollbar{width:3px}.panel-left::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;display:flex;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(4px)}
+.modal-overlay.hidden{display:none}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:480px;max-height:80vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid var(--border)}
+.modal-title{font-family:var(--font-d);font-size:14px;font-weight:700}
+.modal-close{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;padding:0 4px}
+.modal-close:hover{color:var(--text)}
+.modal-body{overflow-y:auto;padding:1rem 1.25rem;flex:1}
+.modal-body::-webkit-scrollbar{width:3px}.modal-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.modal-total{font-family:var(--font-d);font-size:1.4rem;font-weight:800;margin-bottom:.25rem}
+.modal-sub{font-size:11px;color:var(--muted);margin-bottom:1rem}
+.modal-item{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--border)}
+.modal-item:last-child{border-bottom:none}
+.mi-icon{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
+.mi-info{flex:1;min-width:0}
+.mi-desc{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mi-date{font-size:10px;color:var(--muted);margin-top:1px}
+.mi-amt{font-family:var(--font-d);font-size:12px;font-weight:700;color:var(--danger);flex-shrink:0}
+/* HISTORY */
+.hist-month{margin-bottom:1.25rem}
+.hist-mo-label{font-family:var(--font-d);font-size:13px;font-weight:700;margin-bottom:.5rem;color:var(--accent2)}
+.hist-summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:.5rem}
+.hist-card{background:var(--surface2);border-radius:8px;padding:.5rem .75rem}
+.hist-card-label{font-size:9px;color:var(--muted);margin-bottom:2px}
+.hist-card-val{font-family:var(--font-d);font-size:13px;font-weight:700}
 .sec-label{font-size:10px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:.6rem}
 .banks-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:.75rem}
 .bank-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.9rem;position:relative;overflow:hidden}
@@ -164,6 +190,43 @@ header{display:flex;align-items:center;justify-content:space-between;padding:1re
       </div>
       <button onclick="updateDebts()" class="btn-upd">Actualizar deudas</button>
     </div>
+
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+        <div class="sec-label" style="margin:0">Historial de gastos</div>
+        <button onclick="openHistory()" style="background:none;border:1px solid var(--border);color:var(--muted);font-size:11px;padding:3px 9px;border-radius:6px;cursor:pointer;font-family:var(--font-m)">Ver historial</button>
+      </div>
+      <div id="hist-preview" style="font-size:12px;color:var(--muted)">Click en "Ver historial" para ver meses anteriores</div>
+    </div>
+
+  </div>
+
+  <!-- MODAL: Budget detail -->
+  <div class="modal-overlay hidden" id="modal-budget" onclick="if(event.target===this)closeBudgetModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-budget-title">Detalle</div>
+        <button class="modal-close" onclick="closeBudgetModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-total" id="modal-budget-total"></div>
+        <div class="modal-sub" id="modal-budget-sub"></div>
+        <div id="modal-budget-items"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: History -->
+  <div class="modal-overlay hidden" id="modal-history" onclick="if(event.target===this)closeHistory()">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Historial de gastos</div>
+        <button class="modal-close" onclick="closeHistory()">×</button>
+      </div>
+      <div class="modal-body" id="modal-history-body">
+        <div class="empty">Cargando...</div>
+      </div>
+    </div>
   </div>
 
   <div class="panel-right">
@@ -238,7 +301,25 @@ const BUDGET_CATS=[
   {key:'natacion',   label:'Natación',         budget:85000},
   {key:'suscripc',   label:'Suscripciones',    budget:296117},
 ];
-const BUDGET_CAT_MAP={supermercado:'super',bencina:'bencina'};
+const BUDGET_CAT_MAP={
+  supermercado:'super',
+  bencina:'bencina',
+  comida:'comida_extra',   // tracked separately as extra, not in fixed budget
+  deporte:'entrenador',    // maps to entrenador+natacion combined
+  suscripcion:'suscripc',
+  hogar:'gc',
+};
+// Budget cats that have direct keyword matches
+const DIRECT_BUDGET_MAP = {
+  'comida perros':'perros', 'perros':'perros',
+  'entrenador':'entrenador', 'cesar':'entrenador',
+  'natacion':'natacion', 'natación':'natacion', 'africa':'natacion',
+  'internet':'internet', 'parcela':'internet',
+  'cuidadora':'cuidadora', 'mamá cuidadora':'cuidadora',
+  'arriendo':'arriendo',
+  'gastos comunes':'gc', 'gasto comun':'gc',
+  'servicios':'servicios', 'luz':'servicios', 'agua':'servicios', 'gas':'servicios',
+};
 const PLAN=[
   {mk:'2026-06',saldoChile:2311106,saldoItau:0,saldoBice:0,note:'Vicente $5.5M · Liquida Itaú+Bice · Iquique+estufa+impresora'},
   {mk:'2026-07',saldoChile:482212, saldoItau:0,saldoBice:0,note:'Todo el ahorro a Banco Chile'},
@@ -308,9 +389,9 @@ async function fbAddExpense(data) {
   try {
     const mk = mkey(S.yr, S.mo);
     await addDoc(expensesRef(mk), {...data, ts: Date.now()});
-    // Update budget tracker in state
-    const bk = BUDGET_CAT_MAP[data.cat];
-    if (bk) {
+    // Update budget tracker — try direct map first, then category map
+    const bk = data.budgetKey || BUDGET_CAT_MAP[data.cat];
+    if (bk && BUDGET_CATS.find(b=>b.key===bk)) {
       const key = mk + '-' + bk;
       S.budgetTracked[key] = (S.budgetTracked[key] || 0) + data.amount;
       await saveState();
@@ -388,17 +469,103 @@ function renderBudget() {
     const col = over ? 'var(--danger)' : warn ? 'var(--warn)' : 'var(--accent2)';
     const d = document.createElement('div');
     d.className = 'bc' + (over ? ' over' : warn ? ' warn' : '');
-    d.title = 'Doble click para editar';
+    d.style.cursor = 'pointer';
+    d.title = 'Click para ver detalle · Doble click para editar';
     d.innerHTML = `<div class="bc-lbl">${bc.label}</div>
       <div class="bc-row"><div class="bc-spent" style="color:${col}">${fmt(spent)}</div><div class="bc-bgt">/ ${fmt(bc.budget)}</div></div>
       <div class="bc-bar-w"><div class="bc-bar ${cl}" style="width:${pct}%"></div></div>`;
-    d.ondblclick = () => {
+    d.onclick = () => openBudgetModal(bc, mk);
+    d.ondblclick = (e) => {
+      e.stopPropagation();
       const v = parseFloat(prompt(`Gasto en "${bc.label}":`, spent));
       if (!isNaN(v) && v >= 0) { S.budgetTracked[mk+'-'+bc.key] = v; saveState(); renderBudget(); }
     };
     g.appendChild(d);
   });
 }
+
+function openBudgetModal(bc, mk) {
+  const spent = S.budgetTracked[mk+'-'+bc.key] || 0;
+  const rest = bc.budget - spent;
+  document.getElementById('modal-budget-title').textContent = bc.label;
+  document.getElementById('modal-budget-total').textContent = fmt(spent);
+  document.getElementById('modal-budget-total').style.color = spent > bc.budget ? 'var(--danger)' : 'var(--accent2)';
+  document.getElementById('modal-budget-sub').textContent =
+    (rest >= 0 ? `Te quedan ${fmt(rest)} de ${fmt(bc.budget)}` : `Superaste por ${fmt(-rest)}`);
+  // Find related expenses
+  const related = expenses.filter(e => e.budgetKey === bc.key || BUDGET_CAT_MAP[e.cat] === bc.key ||
+    (bc.key==='perros' && /perro/i.test(e.desc)) ||
+    (bc.key==='entrenador' && /entrenador|cesar/i.test(e.desc)) ||
+    (bc.key==='natacion' && /natac|africa/i.test(e.desc)) ||
+    (bc.key==='servicios' && /luz|agua|gas|servicio/i.test(e.desc)) ||
+    (bc.key==='internet' && /internet|parcela/i.test(e.desc)) ||
+    (bc.key==='cuidadora' && /cuidadora|mamá/i.test(e.desc))
+  );
+  const items = document.getElementById('modal-budget-items');
+  items.innerHTML = '';
+  if (!related.length) {
+    items.innerHTML = '<div class="empty" style="padding:1rem 0">Sin gastos registrados vía chat para esta categoría</div>';
+  } else {
+    related.forEach(e => {
+      const cat = CATS[e.cat] || CATS.otro;
+      const d = document.createElement('div');
+      d.className = 'modal-item';
+      d.innerHTML = `<div class="mi-icon" style="background:${cat.bg}">${cat.icon}</div>
+        <div class="mi-info"><div class="mi-desc">${e.desc}</div><div class="mi-date">${e.date}</div></div>
+        <div class="mi-amt">${fmt(e.amount)}</div>`;
+      items.appendChild(d);
+    });
+  }
+  document.getElementById('modal-budget').classList.remove('hidden');
+}
+function closeBudgetModal() { document.getElementById('modal-budget').classList.add('hidden'); }
+
+async function openHistory() {
+  document.getElementById('modal-history').classList.remove('hidden');
+  const body = document.getElementById('modal-history-body');
+  body.innerHTML = '<div class="empty">Cargando historial...</div>';
+  // Load last 6 months
+  const months = [];
+  let yr = S.yr, mo = S.mo;
+  for (let i = 0; i < 6; i++) {
+    mo--; if (mo < 0) { mo = 11; yr--; }
+    months.push({yr, mo, mk: mkey(yr, mo)});
+  }
+  body.innerHTML = '';
+  let hasAny = false;
+  for (const m of months) {
+    try {
+      const q = query(expensesRef(m.mk), orderBy('ts', 'desc'));
+      const snap = await new Promise((res, rej) => {
+        const unsub = onSnapshot(q, s => { unsub(); res(s); }, rej);
+      });
+      if (snap.empty) continue;
+      hasAny = true;
+      const exps = snap.docs.map(d => ({id: d.id, ...d.data()}));
+      const total = exps.reduce((s,e) => s+e.amount, 0);
+      const div = document.createElement('div');
+      div.className = 'hist-month';
+      div.innerHTML = `<div class="hist-mo-label">${MONTHS[m.mo]} ${m.yr}</div>
+        <div class="hist-summary">
+          <div class="hist-card"><div class="hist-card-label">Total extras</div><div class="hist-card-val" style="color:var(--danger)">${fmt(total)}</div></div>
+          <div class="hist-card"><div class="hist-card-label">Gastos</div><div class="hist-card-val">${exps.length}</div></div>
+          <div class="hist-card"><div class="hist-card-label">Promedio</div><div class="hist-card-val">${fmt(total/exps.length)}</div></div>
+        </div>`;
+      exps.forEach(e => {
+        const cat = CATS[e.cat] || CATS.otro;
+        const item = document.createElement('div');
+        item.className = 'modal-item';
+        item.innerHTML = `<div class="mi-icon" style="background:${cat.bg}">${cat.icon}</div>
+          <div class="mi-info"><div class="mi-desc">${e.desc}</div><div class="mi-date">${cat.label} · ${e.date}</div></div>
+          <div class="mi-amt">${fmt(e.amount)}</div>`;
+        div.appendChild(item);
+      });
+      body.appendChild(div);
+    } catch(err) { console.error('history month', m.mk, err); }
+  }
+  if (!hasAny) body.innerHTML = '<div class="empty">Sin gastos registrados en meses anteriores</div>';
+}
+function closeHistory() { document.getElementById('modal-history').classList.add('hidden'); }
 
 function renderExpenses() {
   const total = expenses.reduce((s,e) => s+e.amount, 0);
@@ -450,7 +617,28 @@ function renderTimeline() {
 }
 
 // ── CHAT PARSER ────────────────────────────────────────────
-function detectCat(text) {
+// Detect which budget category a message maps to directly
+function detectBudgetCat(text) {
+  const t = text.toLowerCase();
+  for (const [kw, bk] of Object.entries(DIRECT_BUDGET_MAP)) {
+    if (t.includes(kw)) return bk;
+  }
+  return BUDGET_CAT_MAP[detectCat(text)] || null;
+}
+
+// Detect debt payment: "pagué X al banco chile/itau/bice"
+function parseDebtPayment(text) {
+  const t = text.toLowerCase();
+  if (!/pag[ué]|abonos?|liquidé|transferí|mandé/.test(t)) return null;
+  const amount = extractAmount(text);
+  if (!amount) return null;
+  let bank = null;
+  if (/chile|bch/.test(t)) bank = 'chile';
+  else if (/itaú|itau/.test(t)) bank = 'itau';
+  else if (/bice/.test(t)) bank = 'bice';
+  if (!bank) return null;
+  return { bank, amount };
+}
   for (const [cat, rx] of Object.entries(KEYWORDS)) { if (rx.test(text)) return cat; }
   return 'otro';
 }
@@ -500,11 +688,12 @@ function buildResponse(text, parsed) {
   }
 
   const lines = [`Registré **${fmt(parsed.amount)}** en ${CATS[parsed.cat]?.label||'gastos'} ✓`];
-  const bk = BUDGET_CAT_MAP[parsed.cat];
+  const bk = parsed.budgetKey || BUDGET_CAT_MAP[parsed.cat];
   if (bk) {
     const bc = BUDGET_CATS.find(b=>b.key===bk);
     if (bc) {
-      const spent = S.budgetTracked[mk+'-'+bk] || 0;
+      const mk2 = mkey(S.yr, S.mo);
+      const spent = S.budgetTracked[mk2+'-'+bk] || 0;
       const rest = bc.budget - spent;
       if (rest >= 0) lines.push(`Te quedan **${fmt(rest)}** en ${bc.label} este mes.`);
       else lines.push(`⚠️ Superaste el presupuesto de ${bc.label} por **${fmt(-rest)}**.`);
@@ -547,6 +736,21 @@ window.sendMsg = async function() {
   await new Promise(r => setTimeout(r, 350+Math.random()*250));
   removeTyping();
 
+  // Debt payment command
+  const debtPayment = parseDebtPayment(text);
+  if (debtPayment) {
+    const { bank, amount } = debtPayment;
+    const prev = S.debts[bank] || 0;
+    const nuevo = Math.max(0, prev - amount);
+    S.debts[bank] = nuevo;
+    await saveState();
+    render();
+    const bankLabel = BANKS.find(b=>b.key===bank)?.label || bank;
+    const liquidado = nuevo === 0;
+    addBotMsg(`Registré abono de **${fmt(amount)}** a ${bankLabel} ✓\n\nSaldo anterior: ${fmt(prev)}\nSaldo nuevo: **${liquidado ? '✓ Liquidado 🎉' : fmt(nuevo)}**\n\nDeuda total: **${fmt(totalDebt())}**`);
+    return;
+  }
+
   // Delete command
   if (/borra|elimina|quita|borrar|eliminar/i.test(text)) {
     const specific = text.replace(/borra|elimina|quita|borrar|eliminar/gi,'').replace(/el último gasto|último|gasto/gi,'').trim();
@@ -567,7 +771,8 @@ window.sendMsg = async function() {
 
   const parsed = parseExpense(text);
   if (parsed) {
-    await fbAddExpense({...parsed, date: new Date().toISOString().split('T')[0]});
+    const budgetKey = detectBudgetCat(text);
+    await fbAddExpense({...parsed, budgetKey, date: new Date().toISOString().split('T')[0]});
   }
   addBotMsg(buildResponse(text, parsed));
 };
