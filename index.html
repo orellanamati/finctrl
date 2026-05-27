@@ -515,7 +515,42 @@ function openBudgetModal(bc,mk){
   document.getElementById('mb-total').textContent=fmt(spent);
   document.getElementById('mb-total').style.color=spent>bc.budget?'var(--danger)':'var(--accent2)';
   document.getElementById('mb-sub').textContent=rest>=0?`Te quedan ${fmt(rest)} de ${fmt(bc.budget)}`:`Superaste por ${fmt(-rest)}`;
-  const related=expenses.filter(e=>e.bk===bc.key);
+  // Match expenses to this budget category — check bk field AND cat/desc keywords
+  const BC_TO_CATS = {
+    'super':      ['supermercado'],
+    'bencina':    ['bencina'],
+    'entrenador': ['deporte'],
+    'natacion':   ['deporte'],
+    'perros':     [],
+    'suscripc':   ['suscripcion'],
+    'hogar':      ['hogar'],
+    'salud':      ['salud'],
+    'internet':   [],
+    'cuidadora':  [],
+    'arriendo':   [],
+    'gc':         [],
+    'servicios':  [],
+  };
+  const BC_KEYWORDS = {
+    'super':      /jumbo|lider|tottus|unimarc|supermercado/i,
+    'bencina':    /bencina|combustible|copec|petrobras|esmax|llené/i,
+    'entrenador': /entrenador|cesar/i,
+    'natacion':   /natac|africa/i,
+    'perros':     /perro/i,
+    'suscripc':   /netflix|spotify|icloud|claude|youtube|rappi|strava/i,
+    'internet':   /internet|parcela/i,
+    'cuidadora':  /cuidadora/i,
+    'arriendo':   /arriendo/i,
+    'gc':         /gastos comunes|gasto comun/i,
+    'servicios':  /luz|agua|gas|servicio/i,
+  };
+  const allowedCats = BC_TO_CATS[bc.key] || [];
+  const kwRx = BC_KEYWORDS[bc.key];
+  const related = expenses.filter(e =>
+    e.bk === bc.key ||
+    allowedCats.includes(e.cat) ||
+    (kwRx && kwRx.test(e.desc))
+  );
   const items=document.getElementById('mb-items');items.innerHTML='';
   if(!related.length){items.innerHTML='<div class="empty" style="padding:1rem 0">Sin gastos registrados para esta categoría.<br><span style="font-size:10px">Usa "Ingreso manual → Presupuesto" para agregar.</span></div>';}
   else{
