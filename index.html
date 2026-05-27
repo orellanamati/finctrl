@@ -302,6 +302,18 @@ header{display:flex;align-items:center;justify-content:space-between;padding:1re
   </div>
 </div>
 
+<!-- MODAL: Debt detail -->
+<div class="overlay hidden" id="modal-debt">
+  <div class="modal">
+    <div class="mhdr"><div class="mhdr-title" id="md-title">Detalle deuda</div><button class="mclose" id="btn-md-close">×</button></div>
+    <div class="mbody">
+      <div class="mtotal" id="md-total"></div>
+      <div class="msub" id="md-sub"></div>
+      <div id="md-items"></div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Budget detail -->
 <div class="overlay hidden" id="modal-budget">
   <div class="modal">
@@ -404,8 +416,11 @@ async function fbAdd(data){
   setSyncDot('saving');
   try{
     const mk=mkey(S.yr,S.mo);
-    await addDoc(expCol(mk),{...data,ts:Date.now()});
-    await addLog({type:data.bk?'budget':'extra',desc:data.desc,amount:data.amount,cat:data.cat,bk:data.bk||null,mk});
+    // Ensure bk is saved correctly
+    const toSave={...data, ts:Date.now()};
+    if(!toSave.bk) delete toSave.bk; // don't save undefined
+    await addDoc(expCol(mk), toSave);
+    await addLog({type:toSave.bk?'budget':'extra', desc:toSave.desc, amount:toSave.amount, cat:toSave.cat, bk:toSave.bk||null, mk});
     setSyncDot('ok');
   }catch(e){setSyncDot('err');console.error(e);}
 }
@@ -457,14 +472,15 @@ function render(){
 
 function renderBanks(){
   const g=document.getElementById('banks');g.innerHTML='';
-  const total=totalDebt();
   BANKS.forEach(b=>{
     const amt=S.debts[b.key]||0;const pct=Math.min(100,(amt/b.orig)*100);const paid=amt===0;
     const d=document.createElement('div');d.className='bcard'+(paid?' paid':'');
+    d.style.cursor='pointer';d.title='Click para ver detalle de abonos';
     d.innerHTML=`<div class="bname">${b.label}</div><div class="bamt ${paid?'z':amt>1000000?'h':'m'}">${paid?'✓ Pagado':fmt(amt)}</div><div class="bbar"><div class="bbar-fill" style="width:${pct}%;background:${paid?'var(--accent2)':b.color}"></div></div>`;
+    d.addEventListener('click',()=>openDebtModal(b));
     g.appendChild(d);
   });
-  const paid=ORIG-total;const pct=Math.max(0,Math.min(100,(paid/ORIG)*100));
+  const total=totalDebt();const paid=ORIG-total;const pct=Math.max(0,Math.min(100,(paid/ORIG)*100));
   document.getElementById('dtotal').textContent=fmt(total);
   document.getElementById('dprog').style.width=pct+'%';
   document.getElementById('dpct').textContent=pct.toFixed(1)+'% pagado';
@@ -514,6 +530,35 @@ function renderTimeline(){
 }
 
 // ── MODALS ───────────────────────────────────────────────────
+async function openDebtModal(bank){
+  document.getElementById('md-title').textContent=bank.label;
+  const amt=S.debts[bank.key]||0;
+  const paid=bank.orig-amt;
+  document.getElementById('md-total').textContent=fmt(amt);
+  document.getElementById('md-total').style.color=amt===0?'var(--accent2)':'var(--danger)';
+  document.getElementById('md-sub').textContent=`Pagado: ${fmt(paid)} de ${fmt(bank.orig)} · ${((paid/bank.orig)*100).toFixed(1)}%`;
+  const items=document.getElementById('md-items');
+  items.innerHTML='<div class="empty">Cargando abonos...</div>';
+  document.getElementById('modal-debt').classList.remove('hidden');
+  try{
+    const q=query(logRef,orderBy('ts','desc'));
+    const snap=await getDocs(q);
+    const abonos=snap.docs.map(d=>({id:d.id,...d.data()})).filter(e=>e.type==='debt'&&e.bank===bank.key);
+    items.innerHTML='';
+    if(!abonos.length){items.innerHTML='<div class="empty">Sin abonos registrados aún</div>';return;}
+    const total=abonos.reduce((s,e)=>s+e.amount,0);
+    const sumDiv=document.createElement('div');
+    sumDiv.style.cssText='display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:.5rem 0 1rem;border-bottom:1px solid var(--border);margin-bottom:.5rem';
+    sumDiv.innerHTML=`<span>${abonos.length} abono${abonos.length>1?'s':''}</span><span style="color:var(--accent2);font-weight:700">Total abonado: ${fmt(total)}</span>`;
+    items.appendChild(sumDiv);
+    abonos.forEach(e=>{
+      const d=document.createElement('div');d.className='mitem';
+      d.innerHTML=`<div class="miicon" style="background:#1a2228">🏦</div><div class="miinfo"><div class="midesc">${fmt(e.amount)}</div><div class="midate">${e.date||''}</div></div><div class="miamt" style="color:var(--accent2)">abono</div>`;
+      items.appendChild(d);
+    });
+  }catch(err){items.innerHTML='<div class="empty">Error cargando historial</div>';console.error(err);}
+}
+
 function openBudgetModal(bc,mk,_spent){
   // Always calculate live from expenses
   const s = expenses.filter(e=>e.bk===bc.key).reduce((a,e)=>a+e.amount,0);
@@ -573,13 +618,39 @@ function openBudgetModal(bc,mk,_spent){
   document.getElementById('modal-budget').classList.remove('hidden');
 }
 
-// Re-render modal content when expenses update (if modal is open)
 function refreshBudgetModalIfOpen(){
   const overlay=document.getElementById('modal-budget');
   if(overlay.classList.contains('hidden'))return;
   const title=document.getElementById('mb-title').textContent;
   const bc=BCATS.find(b=>b.label===title);
-  if(bc)openBudgetModal(bc,mkey(S.yr,S.mo));
+  if(!bc)return;
+  // Update total only
+  const s=expenses.filter(e=>e.bk===bc.key).reduce((a,e)=>a+e.amount,0);
+  const rest=bc.budget-s;
+  document.getElementById('mb-total').textContent=fmt(s);
+  document.getElementById('mb-total').style.color=s>bc.budget?'var(--danger)':'var(--accent2)';
+  document.getElementById('mb-sub').textContent=rest>=0?`Te quedan ${fmt(rest)} de ${fmt(bc.budget)}`:`Superaste por ${fmt(-rest)}`;
+  // Update list only (preserve add form at top)
+  const items=document.getElementById('mb-items');
+  // Remove old expense items but keep the add row (first child)
+  const addRow=items.firstChild;
+  items.innerHTML='';
+  if(addRow)items.appendChild(addRow);
+  const related=expenses.filter(e=>e.bk===bc.key);
+  if(!related.length){
+    const empty=document.createElement('div');
+    empty.className='empty';empty.style.padding='1rem 0';
+    empty.innerHTML='Sin gastos aún — usa el formulario de arriba.';
+    items.appendChild(empty);
+  } else {
+    related.forEach(e=>{
+      const cat=CATS[e.cat]||CATS.otro;const d=document.createElement('div');d.className='mitem';
+      d.innerHTML=`<div class="miicon" style="background:${cat.bg}">${cat.icon}</div><div class="miinfo"><div class="midesc">${e.desc}</div><div class="midate">${e.date}</div></div><div class="miamt">${fmt(e.amount)}</div><button class="mi-edit" data-id="${e.id}">✏️</button><button class="mi-del" data-id="${e.id}">×</button>`;
+      items.appendChild(d);
+    });
+    items.querySelectorAll('.mi-del').forEach(btn=>btn.addEventListener('click',()=>fbDel(btn.dataset.id)));
+    items.querySelectorAll('.mi-edit').forEach(btn=>btn.addEventListener('click',()=>{const e=expenses.find(x=>x.id===btn.dataset.id);if(e)openEditModal(e);}));
+  }
 }
 
 function openEditModal(e){
@@ -722,10 +793,11 @@ document.getElementById('btn-prev').addEventListener('click',()=>{S.mo--;if(S.mo
 document.getElementById('btn-next').addEventListener('click',()=>{S.mo++;if(S.mo>11){S.mo=0;S.yr++;}subscribeExpenses();render();});
 
 // Close modals
+document.getElementById('btn-md-close').addEventListener('click',()=>document.getElementById('modal-debt').classList.add('hidden'));
 document.getElementById('btn-mb-close').addEventListener('click',()=>document.getElementById('modal-budget').classList.add('hidden'));
 document.getElementById('btn-mh-close').addEventListener('click',()=>document.getElementById('modal-history').classList.add('hidden'));
 document.getElementById('btn-edit-close').addEventListener('click',()=>document.getElementById('modal-edit').classList.add('hidden'));
-['modal-budget','modal-history','modal-edit'].forEach(id=>{
+['modal-budget','modal-history','modal-edit','modal-debt'].forEach(id=>{
   document.getElementById(id).addEventListener('click',e=>{if(e.target===document.getElementById(id))document.getElementById(id).classList.add('hidden');});
 });
 
