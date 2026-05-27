@@ -463,6 +463,36 @@ function fmtInput(el){
 }
 function parseInputAmt(el){return parseInt(el.value.replace(/\./g,'').replace(/[^\d]/g,''))||0;}
 
+// ── MODALS ───────────────────────────────────────────────────
+async function openDebtModal(bank){
+  document.getElementById('md-title').textContent=bank.label;
+  const amt=S.debts[bank.key]||0;
+  const paid=bank.orig-amt;
+  document.getElementById('md-total').textContent=fmt(amt);
+  document.getElementById('md-total').style.color=amt===0?'var(--accent2)':'var(--danger)';
+  document.getElementById('md-sub').textContent=`Pagado: ${fmt(paid)} de ${fmt(bank.orig)} · ${((paid/bank.orig)*100).toFixed(1)}%`;
+  const items=document.getElementById('md-items');
+  items.innerHTML='<div class="empty">Cargando abonos...</div>';
+  document.getElementById('modal-debt').classList.remove('hidden');
+  try{
+    const q=query(logRef,orderBy('ts','desc'));
+    const snap=await getDocs(q);
+    const abonos=snap.docs.map(d=>({id:d.id,...d.data()})).filter(e=>e.type==='debt'&&e.bank===bank.key);
+    items.innerHTML='';
+    if(!abonos.length){items.innerHTML='<div class="empty">Sin abonos registrados aún</div>';return;}
+    const total=abonos.reduce((s,e)=>s+e.amount,0);
+    const sumDiv=document.createElement('div');
+    sumDiv.style.cssText='display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:.5rem 0 1rem;border-bottom:1px solid var(--border);margin-bottom:.5rem';
+    sumDiv.innerHTML=`<span>${abonos.length} abono${abonos.length>1?'s':''}</span><span style="color:var(--accent2);font-weight:700">Total abonado: ${fmt(total)}</span>`;
+    items.appendChild(sumDiv);
+    abonos.forEach(e=>{
+      const d=document.createElement('div');d.className='mitem';
+      d.innerHTML=`<div class="miicon" style="background:#1a2228">🏦</div><div class="miinfo"><div class="midesc">${fmt(e.amount)}</div><div class="midate">${e.date||''}</div></div><div class="miamt" style="color:var(--accent2)">abono</div>`;
+      items.appendChild(d);
+    });
+  }catch(err){items.innerHTML='<div class="empty">Error cargando historial</div>';console.error(err);}
+}
+
 // ── RENDER ───────────────────────────────────────────────────
 function render(){
   document.getElementById('mlabel').textContent=`${MONTHS[S.mo]} ${S.yr}`;
@@ -529,36 +559,7 @@ function renderTimeline(){
   });
 }
 
-// ── MODALS ───────────────────────────────────────────────────
-async function openDebtModal(bank){
-  document.getElementById('md-title').textContent=bank.label;
-  const amt=S.debts[bank.key]||0;
-  const paid=bank.orig-amt;
-  document.getElementById('md-total').textContent=fmt(amt);
-  document.getElementById('md-total').style.color=amt===0?'var(--accent2)':'var(--danger)';
-  document.getElementById('md-sub').textContent=`Pagado: ${fmt(paid)} de ${fmt(bank.orig)} · ${((paid/bank.orig)*100).toFixed(1)}%`;
-  const items=document.getElementById('md-items');
-  items.innerHTML='<div class="empty">Cargando abonos...</div>';
-  document.getElementById('modal-debt').classList.remove('hidden');
-  try{
-    const q=query(logRef,orderBy('ts','desc'));
-    const snap=await getDocs(q);
-    const abonos=snap.docs.map(d=>({id:d.id,...d.data()})).filter(e=>e.type==='debt'&&e.bank===bank.key);
-    items.innerHTML='';
-    if(!abonos.length){items.innerHTML='<div class="empty">Sin abonos registrados aún</div>';return;}
-    const total=abonos.reduce((s,e)=>s+e.amount,0);
-    const sumDiv=document.createElement('div');
-    sumDiv.style.cssText='display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:.5rem 0 1rem;border-bottom:1px solid var(--border);margin-bottom:.5rem';
-    sumDiv.innerHTML=`<span>${abonos.length} abono${abonos.length>1?'s':''}</span><span style="color:var(--accent2);font-weight:700">Total abonado: ${fmt(total)}</span>`;
-    items.appendChild(sumDiv);
-    abonos.forEach(e=>{
-      const d=document.createElement('div');d.className='mitem';
-      d.innerHTML=`<div class="miicon" style="background:#1a2228">🏦</div><div class="miinfo"><div class="midesc">${fmt(e.amount)}</div><div class="midate">${e.date||''}</div></div><div class="miamt" style="color:var(--accent2)">abono</div>`;
-      items.appendChild(d);
-    });
-  }catch(err){items.innerHTML='<div class="empty">Error cargando historial</div>';console.error(err);}
-}
-
+// ── MODALS (budget/edit/history) ─────────────────────────────
 function openBudgetModal(bc,mk,_spent){
   // Always calculate live from expenses
   const s = expenses.filter(e=>e.bk===bc.key).reduce((a,e)=>a+e.amount,0);
