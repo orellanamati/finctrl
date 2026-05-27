@@ -639,6 +639,7 @@ function parseDebtPayment(text) {
   if (!bank) return null;
   return { bank, amount };
 }
+function detectCat(text) {
   for (const [cat, rx] of Object.entries(KEYWORDS)) { if (rx.test(text)) return cat; }
   return 'otro';
 }
