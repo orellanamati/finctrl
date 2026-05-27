@@ -392,7 +392,12 @@ async function addLog(entry){
 function subscribeExpenses(){
   if(unsubExp)unsubExp();
   const q=query(expCol(mkey(S.yr,S.mo)),orderBy('ts','desc'));
-  unsubExp=onSnapshot(q,snap=>{expenses=snap.docs.map(d=>({id:d.id,...d.data()}));renderExpenses();});
+  unsubExp=onSnapshot(q,snap=>{
+    expenses=snap.docs.map(d=>({id:d.id,...d.data()}));
+    renderExpenses();
+    renderBudget(); // always re-render budget when expenses change
+    refreshBudgetModalIfOpen();
+  });
 }
 
 async function fbAdd(data){
@@ -509,70 +514,72 @@ function renderTimeline(){
 }
 
 // ── MODALS ───────────────────────────────────────────────────
-function openBudgetModal(bc,mk,spent){
-  if(spent===undefined){
-    const derived={};expenses.forEach(e=>{if(e.bk)derived[mk+'-'+e.bk]=(derived[mk+'-'+e.bk]||0)+e.amount;});
-    spent=derived[mk+'-'+bc.key]!==undefined?derived[mk+'-'+bc.key]:(S.budgetTracked[mk+'-'+bc.key]||0);
-  }
-  const rest=bc.budget-spent;
+function openBudgetModal(bc,mk,_spent){
+  // Always calculate live from expenses
+  const s = expenses.filter(e=>e.bk===bc.key).reduce((a,e)=>a+e.amount,0);
+  const rest=bc.budget-s;
   document.getElementById('mb-title').textContent=bc.label;
-  document.getElementById('mb-total').textContent=fmt(spent);
-  document.getElementById('mb-total').style.color=spent>bc.budget?'var(--danger)':'var(--accent2)';
+  document.getElementById('mb-total').textContent=fmt(s);
+  document.getElementById('mb-total').style.color=s>bc.budget?'var(--danger)':'var(--accent2)';
   document.getElementById('mb-sub').textContent=rest>=0?`Te quedan ${fmt(rest)} de ${fmt(bc.budget)}`:`Superaste por ${fmt(-rest)}`;
-  // Match expenses to this budget category — check bk field AND cat/desc keywords
-  const BC_TO_CATS = {
-    'super':      ['supermercado'],
-    'bencina':    ['bencina'],
-    'entrenador': ['deporte'],
-    'natacion':   ['deporte'],
-    'perros':     [],
-    'suscripc':   ['suscripcion'],
-    'hogar':      ['hogar'],
-    'salud':      ['salud'],
-    'internet':   [],
-    'cuidadora':  [],
-    'arriendo':   [],
-    'gc':         [],
-    'servicios':  [],
-  };
-  const BC_KEYWORDS = {
-    'super':      /jumbo|lider|tottus|unimarc|supermercado/i,
-    'bencina':    /bencina|combustible|copec|petrobras|esmax|llené/i,
-    'entrenador': /entrenador|cesar/i,
-    'natacion':   /natac|africa/i,
-    'perros':     /perro/i,
-    'suscripc':   /netflix|spotify|icloud|claude|youtube|rappi|strava/i,
-    'internet':   /internet|parcela/i,
-    'cuidadora':  /cuidadora/i,
-    'arriendo':   /arriendo/i,
-    'gc':         /gastos comunes|gasto comun/i,
-    'servicios':  /luz|agua|gas|servicio/i,
-  };
-  const allowedCats = BC_TO_CATS[bc.key] || [];
-  const kwRx = BC_KEYWORDS[bc.key];
-  const related = expenses.filter(e =>
-    e.bk === bc.key ||
-    allowedCats.includes(e.cat) ||
-    (kwRx && kwRx.test(e.desc))
-  );
+
   const items=document.getElementById('mb-items');items.innerHTML='';
-  if(!related.length){items.innerHTML='<div class="empty" style="padding:1rem 0">Sin gastos registrados para esta categoría.<br><span style="font-size:10px">Usa "Ingreso manual → Presupuesto" para agregar.</span></div>';}
-  else{
+
+  // Inline add form
+  const addRow=document.createElement('div');
+  addRow.style.cssText='display:flex;gap:8px;margin-bottom:1rem;padding-bottom:1rem;border-bottom:1px solid var(--border)';
+  addRow.innerHTML=`
+    <input id="mb-add-desc" class="adj" type="text" placeholder="Descripción" style="flex:1">
+    <input id="mb-add-amt" class="adj fmtnum" type="text" inputmode="numeric" placeholder="0" style="width:100px">
+    <button id="mb-add-btn" style="background:var(--accent);border:none;border-radius:7px;color:#fff;font-family:var(--fd);font-weight:700;font-size:12px;padding:6px 12px;cursor:pointer;white-space:nowrap">+ Agregar</button>`;
+  items.appendChild(addRow);
+  // Format the amount input
+  fmtInput(document.getElementById('mb-add-amt'));
+  document.getElementById('mb-add-btn').addEventListener('click', async()=>{
+    const desc=document.getElementById('mb-add-desc').value.trim();
+    const amount=parseInputAmt(document.getElementById('mb-add-amt'));
+    if(!desc||!amount){showToast('Completa descripción y monto');return;}
+    const catMap={'super':'supermercado','bencina':'bencina','entrenador':'deporte','natacion':'deporte','perros':'otro','suscripc':'suscripcion','hogar':'hogar','salud':'salud','internet':'otro','cuidadora':'otro','arriendo':'otro','gc':'otro','servicios':'otro'};
+    await fbAdd({desc, amount, cat:catMap[bc.key]||'otro', bk:bc.key, date:new Date().toISOString().split('T')[0]});
+    showToast(`${fmt(amount)} agregado a ${bc.label} ✓`);
+    // modal will refresh via snapshot
+  });
+
+  // Expense list
+  const related=expenses.filter(e=>e.bk===bc.key);
+  if(!related.length){
+    const empty=document.createElement('div');
+    empty.className='empty';empty.style.padding='1rem 0';
+    empty.innerHTML='Sin gastos registrados aún.<br><span style="font-size:10px">Usa el formulario de arriba para agregar.</span>';
+    items.appendChild(empty);
+  } else {
     related.forEach(e=>{
       const cat=CATS[e.cat]||CATS.otro;const d=document.createElement('div');d.className='mitem';
-      d.innerHTML=`<div class="miicon" style="background:${cat.bg}">${cat.icon}</div><div class="miinfo"><div class="midesc">${e.desc}</div><div class="midate">${e.date}</div></div><div class="miamt">${fmt(e.amount)}</div><button class="mi-edit" data-id="${e.id}" title="Editar">✏️</button><button class="mi-del" data-id="${e.id}" title="Eliminar">×</button>`;
+      d.innerHTML=`<div class="miicon" style="background:${cat.bg}">${cat.icon}</div>
+        <div class="miinfo"><div class="midesc">${e.desc}</div><div class="midate">${e.date}</div></div>
+        <div class="miamt">${fmt(e.amount)}</div>
+        <button class="mi-edit" data-id="${e.id}" title="Editar">✏️</button>
+        <button class="mi-del" data-id="${e.id}" title="Eliminar">×</button>`;
       items.appendChild(d);
     });
     items.querySelectorAll('.mi-del').forEach(btn=>btn.addEventListener('click',async()=>{
       await fbDel(btn.dataset.id);
-      openBudgetModal(bc,mk);// refresh modal
+      // modal refreshes via snapshot — just update header
     }));
     items.querySelectorAll('.mi-edit').forEach(btn=>btn.addEventListener('click',()=>{
-      const e=expenses.find(x=>x.id===btn.dataset.id);if(!e)return;
-      openEditModal(e);
+      const e=expenses.find(x=>x.id===btn.dataset.id);if(e)openEditModal(e);
     }));
   }
   document.getElementById('modal-budget').classList.remove('hidden');
+}
+
+// Re-render modal content when expenses update (if modal is open)
+function refreshBudgetModalIfOpen(){
+  const overlay=document.getElementById('modal-budget');
+  if(overlay.classList.contains('hidden'))return;
+  const title=document.getElementById('mb-title').textContent;
+  const bc=BCATS.find(b=>b.label===title);
+  if(bc)openBudgetModal(bc,mkey(S.yr,S.mo));
 }
 
 function openEditModal(e){
