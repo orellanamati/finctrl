@@ -540,9 +540,42 @@ async function openDebtModal(bank){
           <div class="midesc">${isSummary?(bankInfo?.label||e.bank||'—'):fmt(e.amount)}</div>
           <div class="midate">${e.date||''}</div>
         </div>
-        <div class="miamt" style="color:var(--accent2)">${isSummary?fmt(e.amount):'abono'}</div>`;
+        <div class="miamt" style="color:var(--accent2)">${isSummary?fmt(e.amount):'abono'}</div>
+        <button class="mi-edit" data-id="${e.id}" data-amt="${e.amount}" title="Editar">✏️</button>
+        <button class="mi-del" data-id="${e.id}" data-amt="${e.amount}" data-bank="${e.bank||bank?.key||''}" title="Eliminar">×</button>`;
       items.appendChild(d);
     });
+
+    // Edit: prompt new amount, update log doc and restore debt diff
+    items.querySelectorAll('.mi-edit').forEach(btn=>btn.addEventListener('click',async()=>{
+      const oldAmt=parseInt(btn.dataset.amt);
+      const newVal=prompt(`Editar abono. Monto actual: $${oldAmt.toLocaleString('es-CL')}\nNuevo monto:`,oldAmt);
+      if(!newVal)return;
+      const newAmt=parseInt(newVal.replace(/\./g,'').replace(/[^\d]/g,''));
+      if(isNaN(newAmt)||newAmt<=0){showToast('Monto inválido');return;}
+      const diff=newAmt-oldAmt;
+      // Update Firestore log doc
+      try{
+        await updateDoc(doc(db,'mati','log','entries',btn.dataset.id),{amount:newAmt});
+        // Adjust debt by difference
+        const bk=btn.closest('.mitem').querySelector('.mi-del').dataset.bank;
+        if(bk&&S.debts[bk]!==undefined){S.debts[bk]=Math.max(0,S.debts[bk]-diff);await saveState();render();}
+        showToast('Abono editado ✓');
+        openDebtModal(bank);
+      }catch(err){showToast('Error al editar');console.error(err);}
+    }));
+
+    // Delete: remove log doc and restore debt amount
+    items.querySelectorAll('.mi-del').forEach(btn=>btn.addEventListener('click',async()=>{
+      if(!confirm(`¿Eliminar abono de $${parseInt(btn.dataset.amt).toLocaleString('es-CL')}?`))return;
+      try{
+        await deleteDoc(doc(db,'mati','log','entries',btn.dataset.id));
+        const bk=btn.dataset.bank;
+        if(bk&&S.debts[bk]!==undefined){S.debts[bk]=(S.debts[bk]||0)+parseInt(btn.dataset.amt);await saveState();render();}
+        showToast('Abono eliminado ✓');
+        openDebtModal(bank);
+      }catch(err){showToast('Error al eliminar');console.error(err);}
+    }));
   }catch(err){
     items.innerHTML='<div class="empty">Error cargando historial</div>';
     console.error(err);
